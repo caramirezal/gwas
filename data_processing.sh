@@ -30,3 +30,9 @@ wget https://raw.githubusercontent.com/genepi-freiburg/gwas/master/single-pca/hi
              --exclude data/high-LD-regions.txt \
              --range --indep-pairwise 50 5 0.2 \
              --out data/qc/miADN
+
+## Calculation of similarity between samples
+## using IBS metric
+./inst/plink --bfile data/qc/miADN_updated_sex \
+             --extract data/qc/miADN.prune.in \
+             --genome --out data/qc/miADN 
