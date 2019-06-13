@@ -36,3 +36,25 @@ wget https://raw.githubusercontent.com/genepi-freiburg/gwas/master/single-pca/hi
 ./inst/plink --bfile data/qc/miADN_updated_sex \
              --extract data/qc/miADN.prune.in \
              --genome --out data/qc/miADN 
+
+
+## remove samples that fails to pass sample qc
+./inst/plink --bfile data/qc/miADN_updated_sex \
+             --remove data/qc/fail_samples_qc.txt \
+             --make-bed --out data/qc/miADN_sample_clean
+
+
+## test missing data differences between samples and controls
+## to filter out SNPs 
+./inst/plink --bfile data/qc/miADN_sample_clean \
+             --test-missing \
+             --pheno data/annotations/cases_vs_controls.ann.txt \
+             --out data/qc/miADN_sample_clean
+
+## download script to process previous SNP sample vs control missing values QC
+wget https://raw.githubusercontent.com/guigotoe/ExomeChip/master/bin/run-diffmiss-qc.pl -P inst/
+
+## extract statistical significat SNP with missing data
+## between cases and controls 
+## outputs a file name fail-diff-miss-qc-txt
+perl inst/run-diffmiss-qc.pl data/qc/miADN_sample_clean 
