@@ -58,3 +58,26 @@ wget https://raw.githubusercontent.com/guigotoe/ExomeChip/master/bin/run-diffmis
 ## between cases and controls 
 ## outputs a file name fail-diff-miss-qc-txt
 perl inst/run-diffmiss-qc.pl data/qc/miADN_sample_clean 
+
+## final SNP filtering by:
+## missing data differentially in cases or controls
+## minor allele frequency
+## Hardy-Weinberg equilibrium
+## missing SNP genotyping (--geno)
+./inst/plink --bfile data/qc/miADN_sample_clean \
+             --exclude data/qc/fail-diffmiss-qc.txt \
+             --maf 0.01 --geno 0.05 --hwe 0.00001 \
+             --make-bed -out data/qc/miADN_clean
+
+
+#################################################################################3
+## performing divergent analysis
+
+## Downloading hapmap SNPs which are not C->G or A->T files
+wget https://raw.githubusercontent.com/genepi-freiburg/gwas/master/cleaning-pipeline/aux/hapmap3r2_CEU.CHB.JPT.YRI.no-at-cg-snps.txt \
+     -P data/qc/
+
+## extracting above SNPs
+./inst/plink --bfile data/qc/miADN_clean \
+             --extract data/qc/hapmap3r2_CEU.CHB.JPT.YRI.no-at-cg-snps.txt \
+             --make-bed --out data/qc/miADN_clean.hapmap-snps
