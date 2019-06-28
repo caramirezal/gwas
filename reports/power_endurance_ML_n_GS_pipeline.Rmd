@@ -1,0 +1,123 @@
+---
+title: "ML and Genetic Scores on Power and Endurance Athletes"
+author: "Carlos Ramírez"
+date: "June 24, 2019"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+This report shows the implementation of Machine Learning and Genetic Scores Model on Power and Endurance
+phenotypes using genotyping data from top elite athletes. Controls were downloaded from 1000 genomes 
+repository.
+
+* **Downloading 1000 genomes mexican genotypes**.
+
+```
+wget -r -c --tries=75 ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/*.genotypes.vcf.gz
+```
+
+* **Download population annotations**. Get a list of mexican population "MXL" sample ids from: http://www.internationalgenome.org/data-portal/sample and then process the igsr_samples.tsv file (2018-11-06)
+in order to get only the column containing the sample ids for mexican genotypes.
+
+```
+cat data/1000genomes/igsr_samples.tsv | grep MXL | cut -f 1 > data/1000genomes/mxn_1000_genomes_list.txt
+```
+
+
+* **Converting vcf to ped files**.
+
+```
+for i in {1..22}; do 
+    ../inst/vcftools_0.1.13/bin/vcftools \ 
+    --gzvcf ../data/1000genomes/ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/ALL.chr$i.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz \ 
+    --chr $i --keep ../data/1000genomes/mxn_1000_genomes_list.txt --out mxn_genomes_$i --plink
+done
+```
+
+* **Converts ped to bed files**.
+
+```
+files=$(ls ~/scripts/snpsDataMining/data/1000genomes/ped | grep ped | sed "s/.ped//g")
+for f in $files; do
+     ./inst/plink \
+     --file ~/scripts/snpsDataMining/data/1000genomes/ped/$f \
+     --make-bed \
+     --out data/1000_genomes_mxn/$f
+done
+```
+
+* **Getting a list of rsids already in MEGAN**. Download the loci name to rsid convertion file stored in this 
+(link)[https://support.illumina.com/content/dam/illumina-support/documents/downloads/productfiles/multiethnic-global/multi-ethnic-global-8-d2-b150-rsids.zip]. Clean and extract the rsids by executing the folowing command. 
+
+```
+grep rs[0-9] data/annotations/Multi-EthnicGlobal_D2_b150_rsids.txt | cut -f2 > data/annotations/megan_rsids.txt
+```
+
+NOTE: There are 1,748,251 variants in MEGAN.
+
+```
+wc -l data/annotations/Multi-EthnicGlobal_D2_b150_rsids.txt 
+1748251 data/annotations/Multi-EthnicGlobal_D2_b150_rsids.txt
+```
+
+* **Extracting SNPs from bed files**.
+
+```
+files=$(ls data/1000_genomes_mxn | grep bed | sed "s/.bed//g")
+for f in $files; do
+      echo Processing $f 
+      ./inst/plink \
+      --bfile data/1000_genomes_mxn/$f \
+      --extract data/annotations/megan_rsids.txt \
+      --make-bed \
+      --out data/1000_genomes_mxn_megan/$f
+done
+```
+
+* **Merge the bed files from 1000 genomes mxn population**.
+
+```
+./inst/plink \
+     --merge-list data/annotations/merge_bed_list.txt \
+     --make-bed \
+     --out data/1000_genomes_mxn_allChr \
+     --memory 60416
+```
+
+* **Merge mxn population with athletes genotypes**.
+
+First, we remove A->T, C->G SNPs which can not be inferred during
+strand flipping.
+
+```
+./inst/plink --bfile data/miADN_raw --extract data/qc/hapmap3r2_CEU.CHB.JPT.YRI.no-at-cg-snps.txt --make-bed --out data/miADN_no_cg_at
+./inst/plink --bfile data/miADN_raw --extract data/qc/hapmap3r2_CEU.CHB.JPT.YRI.no-at-cg-snps.txt --make-bed --out data/miADN_no_cg_at
+```
+
+Then, merge files. 
+
+```
+./inst/plink \
+     --bfile data/miADN_no_cg_at_no_miss \
+     --bmerge data/1000_genomes_mxn_allChr_no_cg_at_no_miss \
+     --make-bed \
+     --out data/miADN_plus_mxn 
+```
+
+If a message similar to "'Warning: Multiple chromosomes seen for variant 'rs4842091'." arise. An additional step must be carried out. 
+Discrepant markers are ging to be stored in the file 'miADN_plus_mxn-merge.missnp'. Hence, this rsids must be discarded by
+running.
+
+```
+./inst/plink --bfile data/miADN_no_cg_at --exclude data/miADN_plus_mxn-merge.missnp --make-bed -out data/miADN_no_cg_at_no_miss
+
+./inst/plink --bfile data/1000_genomes_mxn_allChr_no_cg_at --exclude data/miADN_plus_mxn-merge.missnp --make-bed -out data/1000_genomes_mxn_allChr_no_cg_at_no_miss
+```
+
+Now merge can be performed with these files.
+
+```
+./inst/plink --bfile data/miADN_no_cg_at_no_miss --bmerge data/1000_genomes_mxn_allChr_no_cg_at_no_miss --make-bed --out data/miADN_plus_mxn
+```
+
