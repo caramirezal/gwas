@@ -1,0 +1,180 @@
+---
+title: "Quality Control of the athletes plus controls MXN genotypes"
+author: "R&D MiADN Department"
+date: "June 24, 2019"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+This report shows quality control of the genotypes for athletes plus MXN samples from 1000genomes HapMap project.
+
+
+### **1. Heterozygosity vs missing SNPs**
+
+First, heterozigosity and missing SNP information are calculated in order to find outliers that could suggests sample genotyping errors.
+
+**INPUT**: data/qc_miADN_plus_mxn/miADN_plus_mxn_updated_sex
+
+Heterozygosity score calculation.
+
+```
+./inst/plink 
+--bfile data/qc_miADN_plus_mxn/miADN_plus_mxn_updated_sex \
+--het \
+--out data/qc_miADN_plus_mxn/miADN_plus_mxn
+```
+
+Perform missing genotypes.
+
+```
+./inst/plink \
+--bfile data/qc_miADN_plus_mxn/miADN_plus_mxn_updated_sex \
+--missing \
+--out data/qc_miADN_plus_mxn/miADN_plus_mxn
+```
+
+**OUTPUT**: 
+
+* miADN_plus_mxn.imiss - missing genotypes ratio. 
+* miADN_plus_mxn.het - heterozigosity in each sample.
+
+NOTE: plot heterozygosity versus missing genotypes using the heterozygous_missing_check.R script.
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+## Create het vs missing snps plots
+setwd("~/scripts/gwas/sc/")
+library(dplyr)
+library(ggplot2)
+
+## Read heterozigous check
+het <- read.table("../data/qc_miADN_plus_mxn/miADN_plus_mxn.het",
+                  fill=TRUE, sep="", header = TRUE)
+
+## Read snp missing data
+missing <- read.table("../data/qc_miADN_plus_mxn/miADN_plus_mxn.imiss",
+                      fill=TRUE, sep="", header = TRUE)
+
+annotations <- read.table("../data/annotations/miADN_plus_mxn_annotated_list.txt", 
+                          sep="\t", 
+                          stringsAsFactors = FALSE,
+                          header = TRUE)
+#head(missing)
+
+## merge both checks
+check <- merge(het, missing)
+check <- merge(check, annotations)
+#head(check)
+#dim(check)
+names(check) <- gsub("\\.", "", names(check))
+check <- mutate(check, HET=(NNM-OHOM)/NNM)
+#head(check)
+
+## plot het vs missing snps
+theme_set(theme_light())
+#pdf("../figures/heterozygous_vs_missing.pdf")
+ggplot(data=check, aes(x=F_MISS, y=HET, colour=ETNIA)) + 
+        geom_point() + 
+        geom_vline(xintercept = 0.35, color="red", 
+                   linetype="dotted", size=0.8) +
+        geom_hline(yintercept = 0.2, color="red", 
+                   linetype="dotted", size=0.8) +
+        xlab("Missing genotyping") +
+        ylab("Heterozygous frequency") +
+        theme(axis.title.x = element_text(size = 16, face="bold"),
+              axis.title.y = element_text(size=16, face = "bold"))
+#dev.off()
+```
+
+It can be seen, that control MXN genotypes as retrieved from 1000genomes HapMap project has high missing genotyping values. In order to preserve as long as possible sample controls QC must be focused on SNP filtering to remove SNP with low genotyping quality. Therefore, 0.20  and 0.46 can be selected thresholds for heterozygosity frequency and missing genotyping, respectively. 
+
+
+### **3. Perform a sex check** 
+
+**INPUT**: 
+
+* mestizo (bed/bim/fam)
+
+We implemented sex check imputation. 
+
+```
+./inst/plink 
+--bfile data/qc_miADN_plus_mxn/miADN_plus_mxn_updated_sex 
+--impute-sex 
+--make-bed 
+--out data/qc_miADN_plus_mxn/miADN_plus_mxn_imputed_sex
+```
+
+There were 146 sex discrepancies in mestizo samples and 134 after sex imputation. Create a file fail-sex-check.txt containing IDs for samples that does not pass sex-check after imputation.
+
+```
+## sex check
+./inst/plink 
+--bfile data/qc_miADN_plus_mxn/miADN_plus_mxn_imputed_sex 
+--check-sex 
+--out data/qc_miADN_plus_mxn/miADN_plus_mxn_imputed_sex
+
+## list of samples that fails passing sex check
+grep PROBLEM data/qc_miADN_plus_mxn/miADN_plus_mxn_imputed_sex.sexcheck \
+| cut -f1,2 \
+> data/qc_miADN_plus_mxn/fail-sex-check.txt
+```
+
+**OUTPUT**: 
+
+* miADN_plus_mxn_imputed_sex (bed/bim/fam) files.
+
+* miADN_plus_mxn_imputed_sex.sexcheck - contains a report with sex discrepancies as inferred from homozygocity scores. 
+
+* fail-sex-check.txt - contains a list of sample IDs that do not pass the QC.
+
+
+### **6. Identity by state calculation**
+
+**INPUT**: miADN_plus_mxn_imputed_sex (bed/bim/fam)
+
+Removing high LD regions for IBS calculation.
+
+```
+./inst/plink \
+--bfile data/qc_miADN_plus_mxn/miADN_plus_mxn_imputed_sex \
+--exclude data/qc_miADN_plus_mxn/high-LD-regions.txt \
+--indep-pairwise 50 5 0.2 \
+--out data/qc_miADN_plus_mxn/miADN_plus_mxn_imputed_sex
+```
+
+Perform IBS calculation.
+
+```
+### IBS calculation
+./inst/plink \
+--bfile data/qc_miADN_plus_mxn/miADN_plus_mxn_imputed_sex \
+--extract data/qc_miADN_plus_mxn/miADN_plus_mxn_imputed_sex.prune.in \
+--genome \
+--out data/qc_miADN_plus_mxn/miADN_plus_mxn_imputed_sex
+
+### IBS pca plot
+./inst/plink --bfile data/qc_miADN_plus_mxn/mestizo_imp_sex --read-genome data/qc_miADN_plus_mxn/mestizo_imp_sex.genome --cluster cc --ppc 1e-3 --mds-plot 2 --out data/qc_miADN_plus_mxn/strat1
+```
+
+The next plot shows the results of the previous PCA results.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ibs <- read.table("../data/qc_miADN_plus_mxn/strat1.mds",
+                  header = TRUE, fill = TRUE,
+                  stringsAsFactors = FALSE)
+
+ann_ibs <- merge(ibs, annotations)
+
+ggplot(ann_ibs, aes(x=C1, y=C2, colour=ETNIA)) +
+        geom_point() +
+        geom_vline(xintercept = -0.01, color="red", 
+                   linetype="dotted", size=0.8) +
+        geom_hline(yintercept = 0.03, color="red", 
+                   linetype="dotted", size=0.8) 
+```
+
+From this plot it can be seen again that control genotypes from 1000genomes are clustered together at higher IBS values in the PCA. This further supports removal of genotypes above -0.01 and 0.03 for C1 and C2 components, respectively.  
+
+
+
