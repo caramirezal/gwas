@@ -1,5 +1,5 @@
 ---
-title: "Quality Control of the athletes plus controls MXN genotypes"
+title: "Quality Control of the athletes plus controls MXL genotypes"
 author: "R&D MiADN Department"
 date: "June 24, 2019"
 output:
@@ -7,7 +7,7 @@ output:
   pdf_document: default
 ---
 
-This report shows quality control of the genotypes for athletes plus MXN samples from 1000genomes HapMap project.
+This report shows quality control of the genotypes for athletes plus MXL samples from 1000genomes HapMap project.
 
 
 ### **1. Heterozygosity vs missing SNPs**
@@ -89,7 +89,7 @@ ggplot(data=check, aes(x=F_MISS, y=HET, colour=ETNIA)) +
 It can be seen, that control MXN genotypes as retrieved from 1000genomes HapMap project has high missing genotyping values. In order to preserve as long as possible sample controls QC must be focused on SNP filtering to remove SNP with low genotyping quality. Therefore, 0.20  and 0.46 can be selected thresholds for heterozygosity frequency and missing genotyping, respectively. 
 
 
-### **3. Perform a sex check** 
+### **2. Sex check** 
 
 **INPUT**: 
 
@@ -129,7 +129,7 @@ grep PROBLEM data/qc_miADN_plus_mxn/miADN_plus_mxn_imputed_sex.sexcheck \
 * fail-sex-check.txt - contains a list of sample IDs that do not pass the QC.
 
 
-### **6. Identity by state calculation**
+### **3. Identity by state calculation**
 
 **INPUT**: miADN_plus_mxn_imputed_sex (bed/bim/fam)
 
@@ -176,5 +176,114 @@ ggplot(ann_ibs, aes(x=C1, y=C2, colour=ETNIA)) +
 
 From this plot it can be seen again that control genotypes from 1000genomes are clustered together at higher IBS values in the PCA. This further supports removal of genotypes above -0.01 and 0.03 for C1 and C2 components, respectively.  
 
+### **4. Ancestry Divergency**
+
+INPUT: 
+
+* miADN_plus_mxn_imputed_sex
+* miADN_plus_mxn_imputed_sex.prune.in
+
+Next, we perform a PCA in order to observe sample clusters and outliers as follows:
+
+```
+./inst/plink 
+--bfile data/qc_miADN_plus_mxn/miADN_plus_mxn_imputed_sex 
+--pca 
+--extract data/qc_miADN_plus_mxn/miADN_plus_mxn_imputed_sex.prune.in 
+--out data/qc_miADN_plus_mxn/miADN_plus_mxn_PCA
+
+```
+
+The results are shown in the next plot.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+pca <- read.table("../data/qc_miADN_plus_mxn/miADN_plus_mxn_PCA.eigenvec",
+                  header = FALSE, stringsAsFactors = FALSE)
+names(pca)[1:2] <- c("FID", "IID") 
+pca_ann <- merge(pca, select(annotations, -(V3:ID)))
+
+ggplot(pca_ann, aes(x=V3, y=V4, colour=ETNIA)) +
+        geom_point() +
+        geom_vline(xintercept=0.015, col="red", 
+              linetype="dotted", size=0.8) +
+        geom_hline(yintercept=0.15, col="red", 
+              linetype="dotted", size=0.8) 
+```
+
+Genotyped samples and MXL controls from 1000genomes hapmap form two separated clusters. Threshold to filter this samples out can be taken as 0.015 and 0.5 for C1 and C2 principal components.
+
+**OUTPUT**: 
+
+* miADN_plus_mxn_PCA.eigenvec
 
 
+### 5. Removing samples that do not pass quality control
+
+
+**INPUT**:
+
+* miADN_plus_mxn_imputed_sex
+* pass_qc_samples.txt
+
+Using the above defined QC thresholds all the samples IDs that did not pass the quality control were stored in the table fail_qc_samples.txt using the script fail_samples_qc_R. Then, samples were filtered out excluding these samples.
+
+```
+./inst/plink --bfile data/qc_miADN_plus_mxn/miADN_plus_mxn_imputed_sex --keep data/qc_miADN_plus_mxn/pass_qc_samples.txt --make-bed --out data/qc_miADN_plus_mxn/miADN_pass_qc
+```
+
+After removing all samples that did not pass the quality control only 140 genotypes remain. 
+
+**OUPUT**:
+
+* miADN_pass_qc (bed/bim/fam) files
+
+### 6. Filtering markers with low genotyping rate
+
+**INPUT**: 
+
+* miADN_pass_qc
+
+Perform quality assessment of genotyping rates for markers.
+
+```
+./inst/plink --bfile data/qc_miADN_plus_mxn/miADN_pass_qc --missing --out data/qc_miADN_plus_mxn/snps-low-qual
+```
+
+The output is stored in the snps-low-qual.lmiss file. 
+
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+#low_qual <- read.table("../data/qc_miADN_plus_mxn/snps-low-qual.lmiss",
+#                       stringsAsFactors = FALSE,
+#                       header = TRUE,
+#                       fill = TRUE)
+
+#jpeg("../figures/snps_low_qual_genotyping.jpg")
+#hist(low_qual$F_MISS, breaks = 50)
+#abline(v=0.05, col="red")
+#dev.off()
+#sum(low_qual$F_MISS<0.05)
+
+#lq <- filter(low_qual, F_MISS > 0.05) %>%
+#        select(SNP)
+#write.table(lq, "../data/qc_miADN_plus_mxn/snps-low-qual.txt",
+#            row.names = FALSE,
+#            col.names = FALSE,
+#            quote = FALSE)
+```
+![Low quality markers](../figures/snps_low_qual_genotyping.jpg)
+
+We choose a genotyping threshold of 0.05. There are 1,359,945 markers that pass the quality threshold. Markers that do not pass the qc were stored in the file snps-low-qual.txt. Then, they were filtered out using the following command.
+
+```
+./inst/plink 
+--bfile data/qc_miADN_plus_mxn/miADN_pass_qc 
+--exclude data/qc_miADN_plus_mxn/snps-low-qual.txt 
+--make-bed 
+--out data/qc_miADN_plus_mxn/miADN_markers_miss_qc
+```
+
+**OUTPUT**:
+
+* miADN_markers_miss_qc (bed/bim/fam)
+
+**Conclusions**: Quality control of the sample genotypes reveals by using multiple methodologies (Heterozygosity vs missing data plot, IBS and PCA) that MXL controls are clustered apart from our data. This suggests that MXL samples from 1000genomes could not be good controls for GWAs analysis of the endurance athletes since it may cause bias related to population stratification.  
